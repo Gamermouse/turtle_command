@@ -1,4 +1,4 @@
-use rocket::fs::FileServer;
+use rocket::fs::{FileServer, NamedFile};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::{path::Path};
@@ -191,7 +191,7 @@ struct TurtleRegistrationData {
 
 // Registers a turtle in the network
 #[post("/register", data = "<reg_data>")]
-fn register(reg_data: json::Json<TurtleRegistrationData>, key: ApiKey) -> String {
+fn register(reg_data: json::Json<TurtleRegistrationData>, _key: ApiKey) -> String {
     dbg!(&reg_data);
 
     let new_turtle = Turtle {
@@ -211,16 +211,22 @@ fn register(reg_data: json::Json<TurtleRegistrationData>, key: ApiKey) -> String
 // Starts a websocket connection with a turtle
 // Turtles will likely do this right when they boot up
 #[get("/websocket")]
-fn websocket(ws: ws::WebSocket, key: ApiKey) -> ws::Channel<'static> {
+fn websocket(ws: ws::WebSocket, _key: ApiKey) -> ws::Channel<'static> {
     use rocket::futures::{SinkExt, StreamExt};
 
     ws.channel(move |mut stream| Box::pin(async move {
-        while let Some(message) = stream.next().await {
-            let _ = stream.send(rocket_ws::Message::Text("Test".to_string())).await;
-        }
+        // while let Some(message) = stream.next().await {
+        //     let _ = stream.send(rocket_ws::Message::Text("Test".to_string())).await;
+        // }
 
         Ok(())
     }))
+}
+
+// Handles the front page
+#[get("/")]
+async fn index() -> Result<NamedFile, std::io::Error> {
+    NamedFile::open("frontend/front_page.html").await
 }
 
 const LUA_FOLDER: &'static str = "lua";
@@ -229,8 +235,14 @@ const LUA_FOLDER: &'static str = "lua";
 fn rocket() -> _ {
     // Creates a new API key if there isn't one
     ApiKey::load_or_new();
-    rocket::build().mount("/", routes![register, websocket])
-    
+    rocket::build()
     // This hosts all the files in the lua folder, so if we recieve a get request that has /lua/filepath it will go to that filepath
-    .mount("/".to_owned()+LUA_FOLDER, FileServer::from("lua/"))
+    .mount("/".to_owned()+LUA_FOLDER, FileServer::from(LUA_FOLDER.to_owned()+"/"))
+    .mount("/", routes![register, websocket, index])
 }
+
+// TODO:
+// Implement pings on the rust side to make sure the connection is active
+// Implement commands on the rust side to control the turtle (just the basics like moving)
+// See if you can move over the pathfinding and world exploration code from the turtleswarm project
+// Add a login system so only people who are authorized can send commands to turtles (maybe)

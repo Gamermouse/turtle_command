@@ -146,7 +146,7 @@ end
 -- Handles the terminate event so it shuts down the websocket before terminating
 local function custom_terminate(websocket)
     local event = os.pullEventRaw("terminate")
-    print("Shutting down websocket...")
+    print("Shutting down websocket.")
     websocket.close()
     if term.isColor() then
         term.setTextColor(colors.red)
@@ -161,7 +161,3 @@ register()
 local websocket = establish_websocket()
 coroutine.waitForAny(custom_terminate(websocket), websocket_listener(websocket))
 
--- TODO:
--- Implement pings on the rust side to make sure the connection is active
--- Implement commands on the rust side to control the turtle (just the basics like moving)
--- See if you can move over the pathfinding and world exploration code from the turtleswarm project
