@@ -7,24 +7,11 @@ use std::sync::{Arc, Mutex};
 use std::{path::Path};
 use uuid::{Uuid};
 use std::{fs, vec};
-
 use rocket::{http::Status, serde::json, State};
 use rocket::request::{FromRequest, Request, Outcome};
 use rocket::tokio::sync::mpsc;
 use rocket_ws as ws;
 #[macro_use] extern crate rocket;
-
-#[derive(Serialize)]
-struct LuaReadableResponse {
-    kind: String,
-    payload: String
-}
-
-impl LuaReadableResponse {
-    fn to_string(&self) -> String {
-        format!("{} {}",self.kind,self.payload)
-    }
-}
 
 #[derive(Debug)]
 enum ApiKeyError {
@@ -71,6 +58,29 @@ impl ApiKey {
     }
 }
 
+// Data structured so the turtle can read and parse it
+// Also the data structure sent from the turtle
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(crate = "rocket::serde")]
+struct TurtleReadable {
+    instruction: String,
+    data: String
+}
+
+impl TurtleReadable {
+    fn new(instruction: &str, data: &str) -> Self {
+        TurtleReadable { instruction: instruction.to_string(), data: data.to_string() }
+    }
+
+    fn serialize(self) -> json::Json<TurtleReadable> {
+        json::Json(self)
+    }
+
+    fn to_ws_message(self) -> ws::Message {
+        ws::Message::Text(json::to_string(&self).unwrap())
+    }
+}
+
 // NOTE: Created with AI
 // Registry that maps a turtle's id to a sender half of an mpsc channel.
 // Any route (e.g. web_command) can grab this shared, managed state and push
@@ -106,26 +116,6 @@ impl TurtleConnections {
     fn get_connected_ids(&self) -> Vec<u16> {
         let senders_vec = self.senders.lock().unwrap().keys().copied().collect();
         senders_vec
-    }
-}
-
-// Manages dispatching turtles, tracking them, and resolving issues
-// Should also handle keeping data up to date, such as pinging turtles to make sure they are still connected
-struct TurtleManager {
-    turtles: Vec<Turtle>
-}
-
-impl TurtleManager {
-    // Loads all the turtles from the turtles/ directory and returns a TurtleManager object
-    fn load() -> Self {
-        let mut turtle_list = vec![];
-        let turtle_iter = std::fs::read_dir("turtles/").unwrap();
-
-        for path in turtle_iter {
-            turtle_list.push(Turtle::load(path.unwrap().file_name()));
-        }
-
-        TurtleManager{ turtles: turtle_list}
     }
 }
 
@@ -231,10 +221,8 @@ struct TurtleRegistrationData {
     fuel: i16
 }
 
-// Registers a turtle in the network
-#[post("/register", data = "<reg_data>")]
-fn register(reg_data: json::Json<TurtleRegistrationData>, _key: ApiKey) -> String {
-    dbg!(&reg_data);
+fn ws_register(reg_data: &String, connections: &Arc<TurtleConnections>) {
+    let reg_data: TurtleRegistrationData = json::from_str(&reg_data).unwrap();
 
     let new_turtle = Turtle {
         id: reg_data.id,
@@ -247,7 +235,8 @@ fn register(reg_data: json::Json<TurtleRegistrationData>, _key: ApiKey) -> Strin
     };
 
     Turtle::save(&new_turtle);
-    LuaReadableResponse {kind: "status".to_string(), payload: "successful".to_string()}.to_string()
+    let response = TurtleReadable::new("status", "successful").to_ws_message();
+    connections.send_to(reg_data.id, response);
 }
 
 // NOTE: Created with AI
@@ -281,8 +270,24 @@ fn websocket(ws: ws::WebSocket, id: u16, connections: &State<Arc<TurtleConnectio
             while let Some(message) = source.next().await {
                 match message {
                     Ok(msg) => {
-                        // TODO: parse turtle responses/status updates here
-                        dbg!(msg);
+                        match msg {
+                            // Makes sure that it is a text input
+                            ws::Message::Text(_) => {
+                                // Deserializes the json into a TurtleReadable object
+                                // It is likely the case that message.data is another json string, which we can then decode in the respective function
+                                let message: TurtleReadable = json::from_str(&msg.into_text().unwrap()).unwrap();
+
+                                let _ = match message.instruction.as_str()  {
+                                    "register" => ws_register(&message.data, &connections),
+
+                                    // Unexpected result, we just ignore it
+                                    _ => continue
+                                };
+                            }
+
+                            // Unexpected result, we just ignore it
+                            _ => continue
+                        }
                     }
                     Err(_) => break,
                 }
@@ -332,9 +337,8 @@ async fn control() -> Result<NamedFile, std::io::Error> {
     NamedFile::open("frontend/control_test.html").await
 }
 
-// Handles the control test page
 // We send back json containing data the user may need to manage turtles
-// TODO: Make this live updating in the future (maybe)
+// TODO: Make this live updating in the future
 #[get("/connected_ids")]
 fn connected_ids(connections: &State<Arc<TurtleConnections>>) -> json::Json<Vec<u16>> {
     let connections = connections.get_connected_ids();
@@ -352,7 +356,7 @@ fn rocket() -> _ {
     .manage(Arc::new(TurtleConnections::new()))
     // This hosts all the files in the lua folder, so if we recieve a get request that has /lua/filepath it will go to that filepath
     .mount("/".to_owned()+LUA_FOLDER, FileServer::from(LUA_FOLDER.to_owned()+"/"))
-    .mount("/", routes![register, websocket, index, control, web_command, connected_ids])
+    .mount("/", routes![websocket, index, control, web_command, connected_ids])
 }
 
 // TODO:

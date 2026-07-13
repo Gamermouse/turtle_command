@@ -48,25 +48,12 @@ local function setup_files()
     end
 end
 
--- Returns kind, response
+-- Returns instruction, data
 -- Kind is always a string representing how to deal with response
 local function parse_response(input)
-    local kind = ""
-    local response = ""
-    local counter = 0
+    local decoded_json = textutils.unserialiseJSON(input)
 
-    for i in string.gmatch(input, "%S+") do
-        if counter == 0 then
-            kind = i
-        elseif counter == 1 then
-            response = i
-        else
-            error("Bad server response!\nKind: "..kind.."\nResponse: "..response)
-        end
-        counter = counter + 1
-    end
-
-    return kind, response
+    return decoded_json.instruction, decoded_json.data
 end
 
 -- Returns a table containing all the items in its inventory
@@ -102,24 +89,16 @@ local function fetch_own_status()
     return my_data
 end
 
+local function format_message(instruction, data)
+    local message = {instruction = instruction, data = data}
+    return textutils.serialiseJSON(message)
+end
+
 -- Sends a post request with all the turtle's data
-local function register()
+local function ws_register(websocket)
     local send_data = fetch_own_status()
-
-    local url, api_key = fetch_conneciton_data()
-    local request = {url = url.."/register", body = textutils.serialiseJSON(send_data), headers = {api_key = api_key}}
-    local response, fail_reason, fail_response = http.post(request)
-
-    if not response then
-        error("\nCouldn't register with the server!\nReason: "..fail_reason)
-    end
-
-    local kind, response = parse_response(response.readAll())
-    if kind == "status" and response == "successful" then
-        print("Registration successful.")
-    else
-        error("Couldn't register with the server!\nResponse: "..kind.." "..response)
-    end
+    local message = format_message("register", textutils.serialiseJSON(send_data))
+    websocket.send(message)
 end
 
 -- Creates a websocket with the server address in url.txt
@@ -222,8 +201,8 @@ local function persistent_event_handler(websocket)
 end
 
 setup_files()
-register()
 
 local websocket = establish_websocket()
+ws_register(websocket)
 persistent_event_handler(websocket)
 
