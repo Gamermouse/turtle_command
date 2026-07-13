@@ -1,4 +1,5 @@
-use rocket::fs::{FileServer, NamedFile};
+use rocket::form::Form;
+use rocket::fs::{FileServer, NamedFile, TempFile};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::{path::Path};
@@ -229,6 +230,25 @@ async fn index() -> Result<NamedFile, std::io::Error> {
     NamedFile::open("frontend/front_page.html").await
 }
 
+#[derive(FromForm, Debug)]
+struct WebCommand<'r> {
+    kind: &'r str,
+    data: &'r str,
+}
+
+// TODO:
+// Figure out how to make the web command forward to a specific open websocket connection
+#[post("/web_command", data = "<command>")]
+fn web_command(command: Form<WebCommand<'_>>) {
+    dbg!(command);
+}
+
+// Handles the control test page
+#[get("/control")]
+async fn control() -> Result<NamedFile, std::io::Error> {
+    NamedFile::open("frontend/control_test.html").await
+}
+
 const LUA_FOLDER: &'static str = "lua";
 
 #[launch]
@@ -238,7 +258,7 @@ fn rocket() -> _ {
     rocket::build()
     // This hosts all the files in the lua folder, so if we recieve a get request that has /lua/filepath it will go to that filepath
     .mount("/".to_owned()+LUA_FOLDER, FileServer::from(LUA_FOLDER.to_owned()+"/"))
-    .mount("/", routes![register, websocket, index])
+    .mount("/", routes![register, websocket, index, control, web_command])
 }
 
 // TODO:
