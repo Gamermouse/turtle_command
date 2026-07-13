@@ -1,3 +1,4 @@
+use rocket::fs::FileServer;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::{path::Path};
@@ -213,8 +214,6 @@ fn register(reg_data: json::Json<TurtleRegistrationData>, key: ApiKey) -> String
 fn websocket(ws: ws::WebSocket, key: ApiKey) -> ws::Channel<'static> {
     use rocket::futures::{SinkExt, StreamExt};
 
-    dbg!("WEBSOCKET CONNECTION ESTABLISHED!");
-
     ws.channel(move |mut stream| Box::pin(async move {
         while let Some(message) = stream.next().await {
             let _ = stream.send(rocket_ws::Message::Text("Test".to_string())).await;
@@ -224,9 +223,14 @@ fn websocket(ws: ws::WebSocket, key: ApiKey) -> ws::Channel<'static> {
     }))
 }
 
+const LUA_FOLDER: &'static str = "lua";
+
 #[launch]
 fn rocket() -> _ {
     // Creates a new API key if there isn't one
     ApiKey::load_or_new();
     rocket::build().mount("/", routes![register, websocket])
+    
+    // This hosts all the files in the lua folder, so if we recieve a get request that has /lua/filepath it will go to that filepath
+    .mount("/".to_owned()+LUA_FOLDER, FileServer::from("lua/"))
 }
