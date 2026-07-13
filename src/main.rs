@@ -269,20 +269,30 @@ fn websocket(ws: ws::WebSocket, id: u16, connections: &State<Arc<TurtleConnectio
         let incoming = async {
             while let Some(message) = source.next().await {
                 match message {
-                    Ok(msg) => {
-                        match msg {
+                    Ok(message) => {
+                        match message {
                             // Makes sure that it is a text input
                             ws::Message::Text(_) => {
                                 // Deserializes the json into a TurtleReadable object
                                 // It is likely the case that message.data is another json string, which we can then decode in the respective function
-                                let message: TurtleReadable = json::from_str(&msg.into_text().unwrap()).unwrap();
+                                let message: Result<TurtleReadable, json::serde_json::Error> = json::from_str(&message.into_text().unwrap());
 
-                                let _ = match message.instruction.as_str()  {
-                                    "register" => ws_register(&message.data, &connections),
+                                // We make sure that the json deserialized properly
+                                match message {
+                                    Ok(m) => {
+                                        let _ = match m.instruction.as_str()  {
+                                        "register" => ws_register(&m.data, &connections),
 
-                                    // Unexpected result, we just ignore it
-                                    _ => continue
-                                };
+                                        // Unexpected result, we just ignore it
+                                        _ => continue
+                                        };
+                                    }
+
+                                    Err(_) => println!("Error parsing json. Ignoring request.")
+                                }
+
+
+
                             }
 
                             // Unexpected result, we just ignore it
@@ -321,7 +331,8 @@ struct WebCommand<'r> {
 // Forwards a form submission to the specific turtle's open websocket connection, if one exists.
 #[post("/web_command", data = "<command>")]
 fn web_command(command: Form<WebCommand<'_>>, connections: &State<Arc<TurtleConnections>>) -> Status {
-    let message = ws::Message::Text(format!("{} {}", command.kind, command.data));
+
+    let message = TurtleReadable::new(command.kind, command.data).to_ws_message();
 
     if connections.send_to(command.id, message) {
         Status::Ok

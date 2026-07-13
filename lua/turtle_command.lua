@@ -52,7 +52,7 @@ end
 -- Kind is always a string representing how to deal with response
 local function parse_response(input)
     local decoded_json = textutils.unserialiseJSON(input)
-
+    print(decoded_json.instruction, decoded_json.data)
     return decoded_json.instruction, decoded_json.data
 end
 
@@ -96,6 +96,9 @@ end
 
 -- Sends a post request with all the turtle's data
 local function ws_register(websocket)
+    if not websocket then
+        print("A")
+    end
     local send_data = fetch_own_status()
     local message = format_message("register", textutils.serialiseJSON(send_data))
     websocket.send(message)
@@ -163,12 +166,13 @@ local function handle_websocket_message(event_data, websocket)
     end
 
     local kind, data = parse_response(message)
-    print("Kind: "..kind.."\n".."Data: "..data)
 
     if kind == "move" then
         handle_move(data)
     elseif kind == "movementPath" then
         handle_path(data)
+    elseif kind == "register" then
+        ws_register(websocket)
     end
 
     -- TODO: Deal with more responses
