@@ -81,7 +81,7 @@ impl TurtleReadable {
     }
 }
 
-// NOTE: Created with AI
+// NOTE: Pattially created with AI
 // Registry that maps a turtle's id to a sender half of an mpsc channel.
 // Any route (e.g. web_command) can grab this shared, managed state and push
 // a message onto a specific turtle's channel. The websocket task for that
@@ -239,7 +239,7 @@ fn ws_register(reg_data: &String, connections: &Arc<TurtleConnections>) {
     connections.send_to(reg_data.id, response);
 }
 
-// NOTE: Created with AI
+// NOTE: Partially created with AI
 // Starts a websocket connection with a turtle.
 // Turtles connect with their id in the query string, e.g. `/websocket?id=5`
 // We register an mpsc sender for that id in the shared TurtleConnections state, then run two loops concurrently:
@@ -268,39 +268,35 @@ fn websocket(ws: ws::WebSocket, id: u16, connections: &State<Arc<TurtleConnectio
 
         let incoming = async {
             while let Some(message) = source.next().await {
+                // Verify that the message is ok
+                let Ok(message) = message else {
+                    break
+                };
+
+                // Makes sure that it is a text input
+                let ws::Message::Text(message) = message else {
+                    // Unexpected result, we just ignore it
+                    continue
+                };
+
+                // Deserializes the json into a TurtleReadable object
+                // It is likely the case that message.data is another json string, which we can then decode in the respective function
+                let message: Result<TurtleReadable, json::serde_json::Error> = json::from_str(&message);
+
+                // We make sure that the json deserialized properly
                 match message {
-                    Ok(message) => {
-                        match message {
-                            // Makes sure that it is a text input
-                            ws::Message::Text(_) => {
-                                // Deserializes the json into a TurtleReadable object
-                                // It is likely the case that message.data is another json string, which we can then decode in the respective function
-                                let message: Result<TurtleReadable, json::serde_json::Error> = json::from_str(&message.into_text().unwrap());
+                    Ok(m) => {
+                        let _ = match m.instruction.as_str()  {
+                        "register" => ws_register(&m.data, &connections),
 
-                                // We make sure that the json deserialized properly
-                                match message {
-                                    Ok(m) => {
-                                        let _ = match m.instruction.as_str()  {
-                                        "register" => ws_register(&m.data, &connections),
-
-                                        // Unexpected result, we just ignore it
-                                        _ => continue
-                                        };
-                                    }
-
-                                    Err(_) => println!("Error parsing json. Ignoring request.")
-                                }
-
-
-
-                            }
-
-                            // Unexpected result, we just ignore it
-                            _ => continue
-                        }
+                        // Unexpected result, we just ignore it
+                        _ => continue
+                        };
                     }
-                    Err(_) => break,
+
+                    Err(_) => println!("Error parsing json. Ignoring request.")
                 }
+
             }
         };
 

@@ -142,14 +142,22 @@ end
 -- Handles run length encoding paths
 -- Data should be formatted as such:
 -- (letter)(number) etc...
--- for example, l4r5u12d1 means left 4, right 5, up 12, down 1
+-- for example, l4r5u12d1rl means left 4, right 5, up 12, down 1, right, left
 local function handle_path(data)
     local raw_list={}
-    data:gsub("%a%d+",function(c) table.insert(raw_list, c) end)
+    data:gsub("%a%d*",function(c) table.insert(raw_list, c) end)
 
     for i, v in pairs(raw_list) do
         local action = string.sub(v, 1, 1)
-        local count = string.sub(v, 2, -1)
+        local count = tonumber(string.sub(v, 2, -1))
+
+        -- Handles the single letter commands
+        if count == nil then
+            count = 1
+        end
+
+        print(v)
+
         for c = 1, count do
             handle_move(action)
         end
