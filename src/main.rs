@@ -333,7 +333,7 @@ fn ws_register(reg_data: &String, connections: &Arc<TurtleConnections>) {
 }
 
 // Recieves blocks from the turtles to be stored in chunk files
-fn ws_sendblocks(reg_data: &String) {
+fn ws_receive_blocks(reg_data: &String) {
     let blocks: Vec<(BlockData, Coordinate)> = json::from_str(&reg_data).unwrap();
 
     for block in blocks.iter() {
@@ -385,6 +385,7 @@ fn websocket(ws: ws::WebSocket, id: u16, connections: &State<Arc<TurtleConnectio
                 // Makes sure that it is a text input
                 let ws::Message::Text(message) = message else {
                     // Unexpected result, we just ignore it
+                    println!("Recieved unexpected websocket result. Ignoring.");
                     continue
                 };
 
@@ -397,17 +398,17 @@ fn websocket(ws: ws::WebSocket, id: u16, connections: &State<Arc<TurtleConnectio
                     Ok(message) => {
                         let _ = match message.instruction.as_str()  {
                         "register" => ws_register(&message.data, &connections),
-                        "sendBlocks" => ws_sendblocks(&message.data),
+                        "sendBlocks" => ws_receive_blocks(&message.data),
 
                         // Unexpected result, we just ignore it
                         _ => {
-                            println!("Recieved unexpected websocket result. Ignoring.");
+                            println!("Recieved unknown websocket result. Ignoring.");
                             continue
                         }
                         };
                     }
 
-                    Err(_) => println!("Error parsing json. Ignoring request.")
+                    Err(_) => println!("Error parsing json. Ignoring.")
                 }
 
             }
