@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 use std::{path::Path};
 use uuid::{Uuid};
-use std::{fs, vec};
+use std::{vec, fs};
 use rocket::{http::Status, serde::json, State};
 use rocket::request::{FromRequest, Request, Outcome};
 use rocket::tokio::sync::mpsc;
@@ -156,11 +156,102 @@ impl Inventory {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Clone, Copy)]
 struct Coordinate {
     x: i32,
     y: i32,
     z: i32
+}
+
+impl Coordinate {
+    /// Creates a coordinate using the x, y, and z inputs
+    fn new(x: i32, y: i32, z: i32) -> Self {
+        Self {x, y, z}
+    }
+
+    fn world_to_local_coords(&self) -> Self {
+        Coordinate::new(self.x & 0xF, self.y & 0xF, self.z & 0xF)
+    }
+
+    fn world_to_chunk_coords(&self) -> Self {
+        Coordinate::new(self.x >> 4, self.y >> 4, self.z >> 4)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize)]
+#[serde(crate = "rocket::serde")]
+#[serde(untagged)]
+enum BlockStateData {
+    Bool(bool),
+    Integer(i32),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize)]
+#[serde(crate = "rocket::serde")]
+struct BlockData {
+    name: String,
+    states: HashMap<String, BlockStateData>
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[derive(Deserialize, Serialize)]
+#[serde(crate = "rocket::serde")]
+struct Chunk {
+    coordinates: Coordinate,
+    block_data: Vec<Vec<Vec<BlockData>>>
+}
+
+impl Chunk {
+    /// Creates a 16x16x16 vector filled with air
+    fn new(coordinates: &Coordinate) -> Self {
+        Self {
+            coordinates: *coordinates,
+            block_data: vec![vec![vec![BlockData {name: "minecraft:air".to_string(), states: HashMap::new() }; 16]; 16]; 16]
+        }
+    }
+
+    /// Sets a block in the chunk to the input
+    fn set_block(&mut self, coordinate: &Coordinate, block: &BlockData) {
+        self.block_data[coordinate.x as usize][coordinate.y as usize][coordinate.z as usize] = block.clone();
+    }
+
+    fn get_name(coords: &Coordinate) -> String {
+       coords.x.to_string() + "_" + &coords.y.to_string() + "_" + &coords.z.to_string()
+    }
+
+    /// Saves this chunks data to the given path with the correct name
+    fn save<P: AsRef<Path>>(&self, path: &P) {
+        let path = path.as_ref();
+        let file_name = Self::get_name(&self.coordinates);
+        let chunk_file = std::fs::File::create(path.join(file_name)).unwrap();
+
+        let chunk_file = lz4_flex::frame::FrameEncoder::new(chunk_file).auto_finish();
+
+        ciborium::into_writer(self, chunk_file).unwrap();
+    }
+
+    /// Creates a new chunk object from a path that is given
+    fn load<P: AsRef<Path>>(path: &P, coordinates: &Coordinate) -> Option<Self> {
+        let path = path.as_ref();
+        let file_name = Self::get_name(coordinates);
+        let reader = std::fs::File::open(path.join(file_name)).ok()?;
+
+        let reader = lz4_flex::frame::FrameDecoder::new(reader);
+
+        ciborium::from_reader(reader).unwrap()
+    }
+
+    fn load_or_new<P: AsRef<Path>>(path: &P, coordinates: &Coordinate) -> Self {
+        let path = path.as_ref();
+        if let Some(chunk) = Self::load(&path, coordinates){
+            chunk
+        } else {
+            Self::new(coordinates)
+        }
+    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -285,9 +376,9 @@ fn websocket(ws: ws::WebSocket, id: u16, connections: &State<Arc<TurtleConnectio
 
                 // We make sure that the json deserialized properly
                 match message {
-                    Ok(m) => {
-                        let _ = match m.instruction.as_str()  {
-                        "register" => ws_register(&m.data, &connections),
+                    Ok(message) => {
+                        let _ = match message.instruction.as_str()  {
+                        "register" => ws_register(&message.data, &connections),
 
                         // Unexpected result, we just ignore it
                         _ => continue

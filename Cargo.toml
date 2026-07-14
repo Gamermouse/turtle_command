@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ciborium = "0.2.2"
+lz4_flex = "0.13.1"
 rocket = { version = "0.5.1", features = ["json"] }
 rocket_ws = "0.1.1"
 serde = { version = "1.0.228", features = ["derive"] }

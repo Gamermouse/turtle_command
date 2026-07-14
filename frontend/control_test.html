@@ -10,10 +10,10 @@ fetch("/connected_ids")
   .then((data) => {
     select = document.getElementById("turtleSelector");
     for (var i = 0; i < data.length; i++) {
-        var option = document.createElement("option");
-        option.value = data[i];
-        option.textContent = data[i];
-        select.appendChild(option);
+      var option = document.createElement("option");
+      option.value = data[i];
+      option.textContent = data[i];
+      select.appendChild(option);
     };
   });
 </script>
