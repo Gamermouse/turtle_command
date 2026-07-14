@@ -1,4 +1,4 @@
 /target
-/backend/turtles
-/backend/world_data
-/backend/api_key.txt
+/turtles
+/world_data
+api_key.txt

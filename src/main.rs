@@ -12,6 +12,7 @@ use rocket::{http::Status, serde::json, State};
 use rocket::request::{FromRequest, Request, Outcome};
 use rocket::tokio::sync::mpsc;
 use rocket_ws as ws;
+#[macro_use] extern crate rocket;
 
 #[derive(Debug)]
 enum ApiKeyError {
